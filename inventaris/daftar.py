@@ -1,0 +1,1 @@
+# daftar alat, cek stok, peminjam aktif, riwayat
