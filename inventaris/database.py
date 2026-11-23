@@ -17,7 +17,7 @@ def koneksi():
         host="localhost",      # MySQL berjalan di komputer sendiri
         user="root",           # user bawaan XAMPP
         password="",           # password bawaan XAMPP kosong
-        database="lab_fisika"  # nama database yang kita buat
+        database="inventaris_laboratorium"  # nama database yang kita buat
     )
 
 
