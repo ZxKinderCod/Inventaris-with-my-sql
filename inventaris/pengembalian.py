@@ -22,7 +22,7 @@ def kembali(id_peminjaman):
     # 1. Cari transaksi beserta nama alatnya
     data = ambil(
         """
-        SELECT p.status, a.nama, p.kode_alat
+        SELECT p.status, a.nama, p.kode_alat, p.jumlah
         FROM peminjaman p JOIN alat a ON p.kode_alat = a.kode
         WHERE p.id = %s
         """,
@@ -30,7 +30,7 @@ def kembali(id_peminjaman):
     )
     if not data:
         return False, "Data peminjaman tidak ditemukan!"
-    status, nama_alat, kode_alat = data[0]
+    status, nama_alat, kode_alat, jumlah = data[0]
 
     # 2. Alat yang sudah dikembalikan tidak boleh dikembalikan lagi
     if status == "dikembalikan":
@@ -41,4 +41,4 @@ def kembali(id_peminjaman):
         "UPDATE peminjaman SET status = 'dikembalikan', tgl_kembali = %s WHERE id = %s",
         (date.today(), id_peminjaman)
     )
-    return True, f"{nama_alat} ({kode_alat}) berhasil dikembalikan."
+    return True, f"{jumlah} x {nama_alat} ({kode_alat}) berhasil dikembalikan."

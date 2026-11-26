@@ -1,16 +1,18 @@
-#proses pinjam & kembali + validasi (stok, rusak, NIM)
 """
 peminjaman.py
 -------------
-Fungsi: mengatur proses peminjaman dan pengembalian alat.
-  - pinjam()   : mahasiswa meminjam 1 unit alat
-  - kembali()  : mahasiswa mengembalikan alat
+Fungsi: mengatur proses peminjaman alat.
+  - cek_alat() : memeriksa satu alat (tidak menyimpan apa pun)
+  - pinjam()   : meminjam BEBERAPA alat sekaligus dalam satu proses
 
-Aturan peminjaman:
-  1. NIM harus valid (angka, 11 digit) dan sudah terdaftar.
-  2. Alat harus sudah terdaftar.
-  3. Alat yang kondisinya rusak tidak bisa dipinjam.
-  4. Alat yang stoknya habis tidak bisa dipinjam.
+Contoh satu proses: 2 resistor + 1 multimeter + 2 project board.
+
+Aturan:
+  1. NIM  harus valid (angka, 11 digit) dan sudah terdaftar.
+  2. Setiap alat harus terdaftar, kondisinya baik, dan stok tersedia
+     harus cukup untuk jumlah yang diminta.
+  3. SEMUA ATAU TIDAK SAMA SEKALI: jika satu alat saja bermasalah,
+     tidak ada alat yang dipinjam dan semua masalah ditampilkan.
 """
 
 from datetime import date
@@ -19,112 +21,106 @@ from database import jalankan, ambil
 from tambah_mahasiswa import nim_valid   # pemeriksaan NIM sudah ada di file ini
 
 
-def pinjam(nim, kode_alat):
+def cek_alat(kode, jumlah):
     """
-    Mencatat peminjaman 1 unit alat oleh seorang mahasiswa.
+    Memeriksa apakah satu alat boleh dipinjam sebanyak 'jumlah' unit.
 
-    nim       : NIM mahasiswa yang meminjam
-    kode_alat : kode alat yang dipinjam
+    return: teks masalah, atau "" (kosong) jika aman
+    """
+    # Alat harus terdaftar
+    alat = ambil("SELECT nama, jumlah, kondisi FROM alat WHERE kode = %s", (kode,))
+    if not alat:
+        return f"Alat {kode} tidak ditemukan"
+    nama, stok, kondisi = alat[0]
+
+    # Alat rusak tidak boleh dipinjam
+    if kondisi == "rusak":
+        return f"{nama} ({kode}) rusak, tidak bisa dipinjam"
+
+    # Stok tersedia = stok total - total unit yang sedang dipinjam
+    hasil = ambil(
+        "SELECT COALESCE(SUM(jumlah), 0) FROM peminjaman "
+        "WHERE kode_alat = %s AND status = 'dipinjam'",
+        (kode,)
+    )
+    tersedia = stok - int(hasil[0][0])
+    if jumlah > tersedia:
+        return f"Stok {nama} ({kode}) tidak cukup: diminta {jumlah}, tersedia {tersedia}"
+
+    return ""
+
+
+def pinjam(nim, daftar_barang):
+    """
+    Mencatat peminjaman beberapa alat sekaligus oleh satu mahasiswa.
+
+    nim           : NIM mahasiswa yang meminjam
+    daftar_barang : list berisi (kode_alat, jumlah),
+                    contoh: [("ED001", 2), ("ED009", 1), ("ED002", 2)]
 
     return: (berhasil, pesan)
     """
     nim = nim.strip()
-    kode_alat = kode_alat.strip()
 
-    # 1. Data wajib diisi
-    if nim == "" or kode_alat == "":
-        return False, "NIM dan kode alat wajib diisi!"
+    # 1. Keranjang tidak boleh kosong
+    if not daftar_barang:
+        return False, "Pilih minimal satu alat untuk dipinjam!"
 
-    # 2. NIM harus angka dan panjangnya sesuai
+    # 2. NIM wajib diisi, harus valid, dan sudah terdaftar
+    if nim == "":
+        return False, "NIM wajib diisi!"
     if not nim_valid(nim):
         return False, "NIM harus berupa angka dan 11 digit!"
-
-    # 3. Mahasiswa harus sudah terdaftar
     mhs = ambil("SELECT nama FROM mahasiswa WHERE nim = %s", (nim,))
     if not mhs:
         return False, f"NIM {nim} belum terdaftar!"
     nama_mhs = mhs[0][0]
 
-    # 4. Alat harus sudah terdaftar
-    alat = ambil("SELECT nama, jumlah, kondisi FROM alat WHERE kode = %s", (kode_alat,))
-    if not alat:
-        return False, f"Alat dengan kode {kode_alat} tidak ditemukan!"
-    nama_alat, jumlah, kondisi = alat[0]
+    # 3. Periksa jumlah, lalu gabungkan alat yang kodenya sama
+    total = {}   # bentuk: {kode_alat: jumlah}
+    for kode, jumlah in daftar_barang:
+        kode = kode.strip()
+        if not str(jumlah).isdigit() or int(jumlah) <= 0:
+            return False, f"Jumlah alat {kode} harus angka lebih dari 0!"
+        total[kode] = total.get(kode, 0) + int(jumlah)
 
-    # 5. Alat rusak tidak boleh dipinjam
-    if kondisi == "rusak":
-        return False, f"{nama_alat} ({kode_alat}) rusak, tidak bisa dipinjam!"
+    # 4. Periksa SEMUA alat dulu, kumpulkan semua masalah
+    masalah = []
+    for kode, jumlah in total.items():
+        pesan = cek_alat(kode, jumlah)
+        if pesan != "":
+            masalah.append(pesan)
+    if masalah:
+        return False, "Peminjaman dibatalkan:\n- " + "\n- ".join(masalah)
 
-    # 6. Hitung stok tersedia = jumlah total - yang sedang dipinjam
-    hasil = ambil(
-        "SELECT COUNT(*) FROM peminjaman WHERE kode_alat = %s AND status = 'dipinjam'",
-        (kode_alat,)
-    )
-    tersedia = jumlah - hasil[0][0]
-    if tersedia <= 0:
-        return False, f"Stok {nama_alat} ({kode_alat}) habis!"
-
-    # 7. Semua aman, catat peminjaman dengan tanggal hari ini
-    jalankan(
-        "INSERT INTO peminjaman (nim, kode_alat, tgl_pinjam) VALUES (%s, %s, %s)",
-        (nim, kode_alat, date.today())
-    )
-    return True, f"Peminjaman berhasil: {nama_mhs} meminjam {nama_alat} ({kode_alat})."
-
-
-def kembali(id_peminjaman):
-    """
-    Mencatat pengembalian alat berdasarkan nomor transaksi (id).
-
-    id_peminjaman : nomor transaksi yang dipilih dari tabel peminjam aktif
-
-    return: (berhasil, pesan)
-    """
-    # 1. Cari transaksi beserta nama alatnya
-    data = ambil(
-        """
-        SELECT p.status, a.nama, p.kode_alat
-        FROM peminjaman p JOIN alat a ON p.kode_alat = a.kode
-        WHERE p.id = %s
-        """,
-        (id_peminjaman,)
-    )
-    if not data:
-        return False, "Data peminjaman tidak ditemukan!"
-    status, nama_alat, kode_alat = data[0]
-
-    # 2. Alat yang sudah dikembalikan tidak boleh dikembalikan lagi
-    if status == "dikembalikan":
-        return False, "Alat sudah pernah dikembalikan!"
-
-    # 3. Ubah status dan isi tanggal kembali dengan hari ini
-    jalankan(
-        "UPDATE peminjaman SET status = 'dikembalikan', tgl_kembali = %s WHERE id = %s",
-        (date.today(), id_peminjaman)
-    )
-    return True, f"{nama_alat} ({kode_alat}) berhasil dikembalikan."
+    # 5. Semua aman: simpan satu baris per jenis alat, tanggal hari ini
+    for kode, jumlah in total.items():
+        jalankan(
+            "INSERT INTO peminjaman (nim, kode_alat, jumlah, tgl_pinjam) "
+            "VALUES (%s, %s, %s, %s)",
+            (nim, kode, jumlah, date.today())
+        )
+    return True, (f"{nama_mhs} berhasil meminjam {len(total)} jenis alat "
+                  f"({sum(total.values())} unit).")
 
 
 # Bagian ini hanya jalan jika file dijalankan langsung (untuk tes)
 if __name__ == "__main__":
-    # Siapkan data sementara: alat baik (stok 1), alat rusak, 1 mahasiswa
-    jalankan("INSERT INTO alat VALUES ('TES01', 'Alat Tes', 1, 'baik')")
-    jalankan("INSERT INTO alat VALUES ('TES02', 'Alat Rusak Tes', 1, 'rusak')")
+    from daftar import daftar_alat
+
+    # Siapkan data sementara
+    jalankan("INSERT INTO alat VALUES ('TES01', 'Resistor Tes', 3, 'baik')")
+    jalankan("INSERT INTO alat VALUES ('TES02', 'Multimeter Tes', 1, 'baik')")
+    jalankan("INSERT INTO alat VALUES ('TES03', 'Alat Rusak Tes', 2, 'rusak')")
     jalankan("INSERT INTO mahasiswa VALUES ('25037010099', 'TES MAHASISWA')")
 
-    print(pinjam("25037010099", "TES01"))   # berhasil
-    print(pinjam("25037010099", "TES01"))   # stok habis (stok hanya 1)
-    print(pinjam("25037010099", "TES02"))   # alat rusak
-    print(pinjam("2503701009A", "TES01"))   # NIM ada huruf
-    print(pinjam("25037010098", "TES01"))   # NIM belum terdaftar
-    print(pinjam("25037010099", "XXX99"))   # kode alat tidak ada
-
-    # Ambil nomor transaksi yang tadi dibuat, lalu kembalikan
-    id_tes = ambil("SELECT id FROM peminjaman WHERE kode_alat = 'TES01'")[0][0]
-    print(kembali(id_tes))                  # berhasil
-    print(kembali(id_tes))                  # sudah dikembalikan
-    print(kembali(999999))                  # transaksi tidak ada
+    print(pinjam("25037010099", [("TES01", 2), ("TES02", 1)]))  # berhasil
+    print(pinjam("25037010099", [("TES01", 2), ("TES02", 1)]))  # stok kurang, semua batal
+    print(pinjam("25037010099", [("TES03", 1)]))                # alat rusak
+    print(pinjam("2503701009A", [("TES01", 1)]))                # NIM ada huruf
+    print(pinjam("25037010099", []))                            # keranjang kosong
+    print(daftar_alat("TES0"))                                  # cek sisa stok
 
     # Bersihkan data tes (riwayat ikut terhapus otomatis)
-    jalankan("DELETE FROM alat WHERE kode IN ('TES01', 'TES02')")
+    jalankan("DELETE FROM alat WHERE kode IN ('TES01', 'TES02', 'TES03')")
     jalankan("DELETE FROM mahasiswa WHERE nim = '25037010099'")

@@ -1,14 +1,15 @@
-# daftar alat, cek stok, peminjam aktif, riwayat
 """
 daftar.py
 ---------
 Fungsi: mengambil (membaca) data dari database untuk ditampilkan di GUI.
   - daftar_alat()            : semua alat + stok yang masih tersedia
   - daftar_alat_tersedia()   : hanya alat yang boleh dipinjam
-  - daftar_mahasiswa()       : semua mahasiswa + jumlah alat yang dipinjam
-  - daftar_peminjam_aktif()  : yang sedang meminjam alat
+  - daftar_mahasiswa()       : semua mahasiswa + jumlah unit yang dipinjam
+  - daftar_peminjam_aktif()  : data peminjaman yang belum dikembalikan
   - daftar_riwayat()         : semua transaksi peminjaman
 
+Catatan: satu baris peminjaman bisa berisi lebih dari 1 unit (kolom "jumlah"),
+jadi stok dihitung dengan SUM(jumlah), bukan sekadar menghitung baris.
 Semua fungsi mengembalikan list data, setiap baris berbentuk tuple.
 """
 
@@ -18,10 +19,9 @@ from database import ambil
 def daftar_alat(kata_kunci=""):
     """
     Mengambil semua alat beserta stok yang tersedia.
-    Stok tersedia = jumlah total - jumlah yang sedang dipinjam.
+    Stok tersedia = jumlah total - total unit yang sedang dipinjam.
 
     kata_kunci : (opsional) mencari berdasarkan kode atau nama alat.
-                 Jika kosong, semua alat ditampilkan.
 
     return: list berisi (kode, nama, jumlah, kondisi, tersedia)
     """
@@ -29,7 +29,7 @@ def daftar_alat(kata_kunci=""):
     return ambil(
         """
         SELECT a.kode, a.nama, a.jumlah, a.kondisi,
-               a.jumlah - COUNT(p.id) AS tersedia
+               CAST(a.jumlah - COALESCE(SUM(p.jumlah), 0) AS SIGNED) AS tersedia
         FROM alat a
         LEFT JOIN peminjaman p
                ON p.kode_alat = a.kode AND p.status = 'dipinjam'
@@ -41,30 +41,35 @@ def daftar_alat(kata_kunci=""):
     )
 
 
-def daftar_alat_tersedia():
+def daftar_alat_tersedia(kata_kunci=""):
     """
     Mengambil alat yang boleh dipinjam: kondisi baik dan stok masih ada.
-    Dipakai untuk pilihan (dropdown) di menu peminjaman.
+    Dipakai untuk tabel pilihan alat di menu peminjaman.
+
+    kata_kunci : (opsional) mencari berdasarkan kode atau nama alat.
 
     return: list berisi (kode, nama, tersedia)
     """
+    pola = f"%{kata_kunci.strip()}%"
     return ambil(
         """
-        SELECT a.kode, a.nama, a.jumlah - COUNT(p.id) AS tersedia
+        SELECT a.kode, a.nama,
+               CAST(a.jumlah - COALESCE(SUM(p.jumlah), 0) AS SIGNED) AS tersedia
         FROM alat a
         LEFT JOIN peminjaman p
                ON p.kode_alat = a.kode AND p.status = 'dipinjam'
-        WHERE a.kondisi = 'baik'
+        WHERE a.kondisi = 'baik' AND (a.kode LIKE %s OR a.nama LIKE %s)
         GROUP BY a.kode, a.nama, a.jumlah
         HAVING tersedia > 0
         ORDER BY a.kode
-        """
+        """,
+        (pola, pola)
     )
 
 
 def daftar_mahasiswa(kata_kunci=""):
     """
-    Mengambil semua mahasiswa beserta jumlah alat yang sedang dipinjam.
+    Mengambil semua mahasiswa beserta total unit alat yang sedang dipinjam.
 
     kata_kunci : (opsional) mencari berdasarkan NIM atau nama.
 
@@ -73,7 +78,8 @@ def daftar_mahasiswa(kata_kunci=""):
     pola = f"%{kata_kunci.strip()}%"
     return ambil(
         """
-        SELECT m.nim, m.nama, COUNT(p.id) AS sedang_dipinjam
+        SELECT m.nim, m.nama,
+               CAST(COALESCE(SUM(p.jumlah), 0) AS SIGNED) AS sedang_dipinjam
         FROM mahasiswa m
         LEFT JOIN peminjaman p
                ON p.nim = m.nim AND p.status = 'dipinjam'
@@ -89,11 +95,12 @@ def daftar_peminjam_aktif():
     """
     Mengambil data peminjaman yang alatnya BELUM dikembalikan.
 
-    return: list berisi (id, nim, nama_mahasiswa, kode_alat, nama_alat, tgl_pinjam)
+    return: list berisi (id, nim, nama_mahasiswa, kode_alat, nama_alat,
+                         jumlah, tgl_pinjam)
     """
     return ambil(
         """
-        SELECT p.id, p.nim, m.nama, p.kode_alat, a.nama, p.tgl_pinjam
+        SELECT p.id, p.nim, m.nama, p.kode_alat, a.nama, p.jumlah, p.tgl_pinjam
         FROM peminjaman p
         JOIN mahasiswa m ON p.nim = m.nim
         JOIN alat a ON p.kode_alat = a.kode
@@ -109,11 +116,11 @@ def daftar_riwayat():
     Transaksi terbaru ada di paling atas.
 
     return: list berisi (id, nim, nama_mahasiswa, kode_alat, nama_alat,
-                         tgl_pinjam, tgl_kembali, status)
+                         jumlah, tgl_pinjam, tgl_kembali, status)
     """
     return ambil(
         """
-        SELECT p.id, p.nim, m.nama, p.kode_alat, a.nama,
+        SELECT p.id, p.nim, m.nama, p.kode_alat, a.nama, p.jumlah,
                p.tgl_pinjam, p.tgl_kembali, p.status
         FROM peminjaman p
         JOIN mahasiswa m ON p.nim = m.nim
@@ -121,14 +128,3 @@ def daftar_riwayat():
         ORDER BY p.id DESC
         """
     )
-
-
-# Bagian ini hanya jalan jika file dijalankan langsung (untuk tes)
-if __name__ == "__main__":
-    print("Jumlah alat:", len(daftar_alat()))
-    print("Jumlah mahasiswa:", len(daftar_mahasiswa()))
-    print("Peminjam aktif:", len(daftar_peminjam_aktif()))
-    print("Riwayat:", len(daftar_riwayat()))
-    print("Alat yang bisa dipinjam:", len(daftar_alat_tersedia()))
-    print("Hasil cari 'osiloskop':", len(daftar_alat("osiloskop")))
-    print("Contoh 1 alat:", daftar_alat()[0])

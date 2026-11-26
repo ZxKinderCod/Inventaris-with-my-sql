@@ -44,12 +44,13 @@ def ubah_alat(kode, nama, jumlah, kondisi):
     if not ada:
         return False, f"Alat dengan kode {kode} tidak ditemukan!"
 
-    # 5. Stok baru tidak boleh lebih kecil dari alat yang sedang dipinjam
+    # 5. Stok baru tidak boleh lebih kecil dari total unit yang sedang dipinjam
     hasil = ambil(
-        "SELECT COUNT(*) FROM peminjaman WHERE kode_alat = %s AND status = 'dipinjam'",
+        "SELECT COALESCE(SUM(jumlah), 0) FROM peminjaman "
+        "WHERE kode_alat = %s AND status = 'dipinjam'",
         (kode,)
     )
-    sedang_dipinjam = hasil[0][0]
+    sedang_dipinjam = int(hasil[0][0])
     if int(jumlah) < sedang_dipinjam:
         return False, f"Jumlah tidak boleh kurang dari {sedang_dipinjam} (sedang dipinjam)!"
 

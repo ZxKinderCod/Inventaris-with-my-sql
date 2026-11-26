@@ -36,12 +36,13 @@ def hapus_alat(kode):
     if not ada:
         return False, f"Alat dengan kode {kode} tidak ditemukan!"
 
-    # 3. Cek apakah alat masih dipinjam (status 'dipinjam')
+    # 3. Cek apakah alat masih dipinjam (hitung total unit)
     hasil = ambil(
-        "SELECT COUNT(*) FROM peminjaman WHERE kode_alat = %s AND status = 'dipinjam'",
+        "SELECT COALESCE(SUM(jumlah), 0) FROM peminjaman "
+        "WHERE kode_alat = %s AND status = 'dipinjam'",
         (kode,)
     )
-    sedang_dipinjam = hasil[0][0]
+    sedang_dipinjam = int(hasil[0][0])
     if sedang_dipinjam > 0:
         return False, f"Alat {kode} tidak bisa dihapus, masih dipinjam ({sedang_dipinjam} unit)!"
 
