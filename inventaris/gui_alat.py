@@ -121,6 +121,10 @@ class TabAlat(ttk.Frame):
             tag = ("rusak",) if baris[3] == "rusak" else ()
             self.tabel.insert("", "end", values=baris, tags=tag)
         self.label_total.config(text=f"Total: {len(data)} jenis alat")
+        
+    def segarkan(self):
+        """Dipanggil gui.py saat tab dibuka, memuat ulang tabel."""
+        self.muat_data()
 
     def pilih_baris(self, event):
         """Dipanggil saat baris tabel diklik: isi form dengan data baris itu."""

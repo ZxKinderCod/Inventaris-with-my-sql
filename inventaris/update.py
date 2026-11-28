@@ -85,6 +85,7 @@ def ubah_mahasiswa(nim, nama):
 
     # 3. Simpan perubahan
     jalankan("UPDATE mahasiswa SET nama = %s WHERE nim = %s", (nama, nim))
+    jalankan("UPDATE peminjaman SET nama = %s WHERE nim = %s", (nama, nim))
     return True, f"Data mahasiswa {nim} berhasil diubah."
 
 

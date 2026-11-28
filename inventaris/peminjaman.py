@@ -60,6 +60,7 @@ def pinjam(nim, daftar_barang):
 
     return: (berhasil, pesan)
     """
+
     nim = nim.strip()
 
     # 1. Keranjang tidak boleh kosong
@@ -96,9 +97,9 @@ def pinjam(nim, daftar_barang):
     # 5. Semua aman: simpan satu baris per jenis alat, tanggal hari ini
     for kode, jumlah in total.items():
         jalankan(
-            "INSERT INTO peminjaman (nim, kode_alat, jumlah, tgl_pinjam) "
-            "VALUES (%s, %s, %s, %s)",
-            (nim, kode, jumlah, date.today())
+            "INSERT INTO peminjaman (nim, nama, kode_alat, jumlah, tgl_pinjam) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (nim, nama_mhs, kode, jumlah, date.today())
         )
     return True, (f"{nama_mhs} berhasil meminjam {len(total)} jenis alat "
                   f"({sum(total.values())} unit).")
